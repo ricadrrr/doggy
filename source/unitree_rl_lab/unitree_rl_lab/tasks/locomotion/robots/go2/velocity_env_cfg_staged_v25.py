@@ -5,8 +5,8 @@
 """Go2 staged velocity: cmd-norm + soft-penalty path (kept tasks only).
 
 Active lineage (resume previous stage ckpt into the next task):
-  2p2-ns15 → 2p6-normsoft → 2p6-track → 3p0-normsoft
-A/B at 3.0: Official-3p0 (in velocity_env_cfg.py) vs 3p0-normsoft here.
+  2p2-ns15 → 2p6-normsoft → 2p6-track → 3p0-normsoft → 3p0-track
+A/B at 3.0: Official-3p0 (in velocity_env_cfg.py) vs staged 3p0 here.
 
 Official velocity_env_cfg.py base task untouched.
 """
@@ -133,7 +133,7 @@ class TrackTuneCurriculumCfg(CurriculumCfg):
 
 
 def _init_track_tune_penalties(cfg: RobotEnvCfg):
-    """Cmd-norm + mid soft weights; boost tracking at 2.6."""
+    """Cmd-norm + mid soft weights; boost tracking (same recipe as 2.6-track)."""
     cfg.rewards.action_rate.func = mdp.action_rate_l2_cmd_normalized
     cfg.rewards.action_rate.weight = -0.08
     cfg.rewards.action_rate.params = {"command_name": "base_velocity"}
@@ -159,6 +159,18 @@ class RobotEnvCfgStagedV25_2p6_Track(RobotEnvCfg):
         super().__post_init__()
         _init_track_tune_penalties(self)
         _pin_velocity_x(self, (-1.5, 2.6))
+
+
+@configclass
+class RobotEnvCfgStagedV25_3p0_Track(RobotEnvCfg):
+    """3.0 track tune: same mid-penalty + track boost as 2.6-track; pin 3.0."""
+
+    curriculum: TrackTuneCurriculumCfg = TrackTuneCurriculumCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        _init_track_tune_penalties(self)
+        _pin_velocity_x(self, (-1.5, 3.0))
 
 
 def _play_post_init(cfg: RobotEnvCfg):
@@ -190,6 +202,13 @@ class RobotPlayEnvCfgStagedV25_2p6_Track(RobotEnvCfgStagedV25_2p6_Track):
 
 @configclass
 class RobotPlayEnvCfgStagedV25_3p0_NormSoft(RobotEnvCfgStagedV25_3p0_NormSoft):
+    def __post_init__(self):
+        super().__post_init__()
+        _play_post_init(self)
+
+
+@configclass
+class RobotPlayEnvCfgStagedV25_3p0_Track(RobotEnvCfgStagedV25_3p0_Track):
     def __post_init__(self):
         super().__post_init__()
         _play_post_init(self)

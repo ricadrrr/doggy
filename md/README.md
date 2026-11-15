@@ -8,7 +8,7 @@
 
 - `Unitree-Go2-Velocity` — 官方 1.0
 - `Unitree-Go2-Velocity-Official-3p0` — 官方奖励/课程，前向上限 3.0（A）
-- `Unitree-Go2-Velocity-Staged-2p2-ns15` → `2p6-normsoft` → `2p6-track` → `3p0-normsoft`（B 归一软严路径）
+- `Unitree-Go2-Velocity-Staged-2p2-ns15` → `2p6-normsoft` → `2p6-track` → `3p0-normsoft` → `3p0-track`（B 归一软严 + 跟踪加强）
 
 TB 入口：`http://localhost:6006`；便捷对照：`logs/tb_easy/`（01 官方、08–11 主线）。
 
