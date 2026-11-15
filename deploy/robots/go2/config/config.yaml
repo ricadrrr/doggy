@@ -1,0 +1,52 @@
+FSM:
+  _: # enabled fsms
+    Passive:
+      id: 1
+    FixStand:
+      id: 2
+    Velocity:
+      id: 3
+      type: RLBase
+    # Mimic_Canter: requires trained mimic policy under logs/rsl_rl/unitree_go2_mimic_canter
+    # Mimic_Canter:
+    #   id: 101
+    #   type: Mimic
+
+  Passive:
+    transitions: 
+      FixStand: LT + A.on_pressed
+    mode: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    kd: [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+  FixStand:
+    transitions: 
+      Passive: LT + B.on_pressed
+      Velocity: start.on_pressed
+    kp: [60, 80, 80, 60, 80, 80, 60, 80, 80, 60, 80, 80]
+    kd: [5, 4, 4, 5, 4, 4, 5, 4, 4, 5, 4, 4]
+    ts: [0, 1, 2]
+    qs: [
+      [],
+      [0.0, 1.36, -2.65, 0.0, 1.36, -2.65, 0.0, 1.36, -2.65, 0.0, 1.36, -2.65],
+      [0., 0.8, -1.5, 0., 0.8, -1.5, 0., 0.8, -1.5, 0., 0.8, -1.5],
+    ]
+  Velocity:
+    transitions: 
+      Passive: LT + B.on_pressed
+      # Mimic_Canter: LT(2s) + A.on_pressed
+    policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity/2026-11-13_15-07-46_s25_2p6_track_from16800
+  Mimic_Canter:
+    transitions:
+      Passive: LT + B.on_pressed
+      Velocity: start.on_pressed
+    fps: 60
+    motion_file: ../../../datasets/kine2go/ai4_dog_run_04/ai4_dog_run_04_clean_464_734_60hz.csv
+    policy_dir: ../../../logs/rsl_rl/unitree_go2_mimic_canter
+    velocity_policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity/2026-11-13_15-07-46_s25_2p6_track_from16800
+    diagnostics: false
+    entry_duration: 2.0
+    handoff_duration: 0.5
+    exit_duration: 1.5
+    entry_velocity: 0.96
+    cycle_frames: 30
+    time_start: 0.0
+    time_end: 4.5
