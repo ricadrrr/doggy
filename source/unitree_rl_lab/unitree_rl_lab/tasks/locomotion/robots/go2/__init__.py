@@ -23,7 +23,7 @@ gym.register(
     },
 )
 
-# Active staged path: ns15 → 2p6-normsoft → 2p6-track → 3p0-normsoft → 3p0-track
+# Active staged path: ns15 → 2p6-normsoft → 2p6-track → (3p0-gate | gatew | gatewb | …)
 _STAGED_V25_RL = "unitree_rl_lab.tasks.locomotion.agents.rsl_rl_ppo_cfg:BasePPORunnerCfg10k"
 for _suffix, _cfg, _play in (
     ("2p2-ns15", "RobotEnvCfgStagedV25_2p2_NormSoftFrom15", "RobotPlayEnvCfgStagedV25_2p2_NormSoftFrom15"),
@@ -31,6 +31,9 @@ for _suffix, _cfg, _play in (
     ("2p6-track", "RobotEnvCfgStagedV25_2p6_Track", "RobotPlayEnvCfgStagedV25_2p6_Track"),
     ("3p0-normsoft", "RobotEnvCfgStagedV25_3p0_NormSoft", "RobotPlayEnvCfgStagedV25_3p0_NormSoft"),
     ("3p0-track", "RobotEnvCfgStagedV25_3p0_Track", "RobotPlayEnvCfgStagedV25_3p0_Track"),
+    ("3p0-gate", "RobotEnvCfgStagedV25_3p0_Gate", "RobotPlayEnvCfgStagedV25_3p0_Gate"),
+    ("3p0-gatew", "RobotEnvCfgStagedV25_3p0_GateW", "RobotPlayEnvCfgStagedV25_3p0_GateW"),
+    ("3p0-gatewb", "RobotEnvCfgStagedV25_3p0_GateWB", "RobotPlayEnvCfgStagedV25_3p0_GateWB"),
 ):
     gym.register(
         id=f"Unitree-Go2-Velocity-Staged-{_suffix}",

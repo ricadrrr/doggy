@@ -28,6 +28,64 @@ def energy(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("r
     return torch.sum(torch.abs(qvel) * torch.abs(qfrc), dim=-1)
 
 
+def track_lin_vel_xy_exp_speed_weighted(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    speed_ref: float = 1.5,
+    speed_hi: float = 3.0,
+    boost: float = 0.35,
+) -> torch.Tensor:
+    """Exponential xy tracking, scaled up toward higher |cmd_x| (scheme-3 high-speed weight).
+
+    scale = 1 + boost * clip((|vx|-speed_ref)/(speed_hi-speed_ref), 0, 1).
+    Low-speed tracking stays ~unchanged; near speed_hi the same tracking error pays more.
+    """
+    from isaaclab.envs.mdp.rewards import track_lin_vel_xy_exp
+
+    base = track_lin_vel_xy_exp(env, std=std, command_name=command_name, asset_cfg=asset_cfg)
+    cmd_x = torch.abs(env.command_manager.get_command(command_name)[:, 0])
+    span = max(float(speed_hi) - float(speed_ref), 1e-6)
+    t = torch.clamp((cmd_x - float(speed_ref)) / span, 0.0, 1.0)
+    return base * (1.0 + float(boost) * t)
+
+
+def track_lin_vel_xy_exp_bin_weighted(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    bin_edges: list[float] | None = None,
+    bin_weights: list[float] | None = None,
+) -> torch.Tensor:
+    """Exponential xy tracking × discrete |cmd_x| bin weights (scheme-C).
+
+    Default bins (m/s): [0,1)→1.0, [1,2)→1.15, [2,2.5)→1.25, [2.5,+)→1.35.
+    Negative cmd_x uses weight 1.0. ``bin_edges`` length must be len(weights)+1.
+    """
+    from isaaclab.envs.mdp.rewards import track_lin_vel_xy_exp
+
+    if bin_edges is None:
+        bin_edges = [0.0, 1.0, 2.0, 2.5, 10.0]
+    if bin_weights is None:
+        bin_weights = [1.0, 1.15, 1.25, 1.35]
+    if len(bin_edges) != len(bin_weights) + 1:
+        raise ValueError("bin_edges must have length len(bin_weights)+1")
+
+    base = track_lin_vel_xy_exp(env, std=std, command_name=command_name, asset_cfg=asset_cfg)
+    cmd_x = torch.abs(env.command_manager.get_command(command_name)[:, 0])
+    scale = torch.ones_like(cmd_x)
+    for i, w in enumerate(bin_weights):
+        lo = float(bin_edges[i])
+        hi = float(bin_edges[i + 1])
+        mask = (cmd_x >= lo) & (cmd_x < hi)
+        scale = torch.where(mask, torch.full_like(scale, float(w)), scale)
+    # |vx| >= last edge: use last weight
+    scale = torch.where(cmd_x >= float(bin_edges[-1]), torch.full_like(scale, float(bin_weights[-1])), scale)
+    return base * scale
+
+
 def action_rate_l2_cmd_normalized(
     env: ManagerBasedRLEnv, command_name: str = "base_velocity"
 ) -> torch.Tensor:
