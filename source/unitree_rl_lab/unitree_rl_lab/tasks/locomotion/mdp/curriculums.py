@@ -188,23 +188,60 @@ def lin_vel_cmd_levels_gated_bins(
     return torch.tensor(ranges.lin_vel_x[1], device=env.device)
 
 
+def _bin_cached_or_none(
+    env: ManagerBasedRLEnv,
+    bin_lo: float,
+    bin_hi: float,
+    cache_prefix: str,
+) -> torch.Tensor | None:
+    """Return last non-empty bin stat, or None if this bin was never observed."""
+    cache_key = f"{cache_prefix}_{float(bin_lo):g}_{float(bin_hi):g}"
+    last = getattr(env, cache_key, None)
+    return None if last is None else torch.tensor(float(last), device=env.device)
+
+
+def _bin_mean_or_last(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    bin_lo: float,
+    bin_hi: float,
+    values: torch.Tensor,
+    cache_prefix: str,
+) -> torch.Tensor | None:
+    """Mean of ``values`` for reset envs with cmd_x in [bin_lo, bin_hi).
+
+    Empty / unavailable: return last non-empty value (or ``None`` if never seen).
+    Never returns 0 for emptiness — RSL-RL averages every reset's curriculum scalar,
+    so logging 0 on empty batches systematically underestimates bin track/error.
+    """
+    cache_key = f"{cache_prefix}_{float(bin_lo):g}_{float(bin_hi):g}"
+    last = getattr(env, cache_key, None)
+    if len(env_ids) == 0 or values.numel() == 0:
+        return None if last is None else torch.tensor(float(last), device=env.device)
+    command_term = env.command_manager.get_term("base_velocity")
+    cmd_x = command_term.command[env_ids, 0]
+    if values.shape[0] != cmd_x.shape[0]:
+        return None if last is None else torch.tensor(float(last), device=env.device)
+    mask = (cmd_x >= float(bin_lo)) & (cmd_x < float(bin_hi))
+    if torch.count_nonzero(mask) == 0:
+        return None if last is None else torch.tensor(float(last), device=env.device)
+    out = torch.mean(values[mask])
+    setattr(env, cache_key, float(out.detach()))
+    return out
+
+
 def log_lin_vel_x_bin_track_rate(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
     bin_lo: float,
     bin_hi: float,
     reward_term_name: str = "track_lin_vel_xy",
-) -> torch.Tensor:
-    """TB helper: mean episode track rate for cmd_x in [bin_lo, bin_hi). 0 if empty."""
+) -> torch.Tensor | None:
+    """TB helper: mean episode track rate for cmd_x in [bin_lo, bin_hi). Log-only."""
     if len(env_ids) == 0:
-        return torch.tensor(0.0, device=env.device)
-    command_term = env.command_manager.get_term("base_velocity")
-    cmd_x = command_term.command[env_ids, 0]
+        return _bin_cached_or_none(env, bin_lo, bin_hi, "_bin_trk")
     rate = env.reward_manager._episode_sums[reward_term_name][env_ids] / env.max_episode_length_s
-    mask = (cmd_x >= float(bin_lo)) & (cmd_x < float(bin_hi))
-    if torch.count_nonzero(mask) == 0:
-        return torch.tensor(0.0, device=env.device)
-    return torch.mean(rate[mask])
+    return _bin_mean_or_last(env, env_ids, bin_lo, bin_hi, rate, "_bin_trk")
 
 
 def log_lin_vel_x_bin_error_xy(
@@ -213,17 +250,13 @@ def log_lin_vel_x_bin_error_xy(
     bin_lo: float,
     bin_hi: float,
     command_name: str = "base_velocity",
-) -> torch.Tensor:
-    """TB helper: mean command-metric error_vel_xy for cmd_x in [bin_lo, bin_hi). 0 if empty."""
+) -> torch.Tensor | None:
+    """TB helper: mean command-metric error_vel_xy for cmd_x in [bin_lo, bin_hi). Log-only."""
     if len(env_ids) == 0:
-        return torch.tensor(0.0, device=env.device)
+        return _bin_cached_or_none(env, bin_lo, bin_hi, "_bin_err")
     command_term = env.command_manager.get_term(command_name)
-    cmd_x = command_term.command[env_ids, 0]
     err = command_term.metrics["error_vel_xy"][env_ids]
-    mask = (cmd_x >= float(bin_lo)) & (cmd_x < float(bin_hi))
-    if torch.count_nonzero(mask) == 0:
-        return torch.tensor(0.0, device=env.device)
-    return torch.mean(err[mask])
+    return _bin_mean_or_last(env, env_ids, bin_lo, bin_hi, err, "_bin_err")
 
 
 def log_gated_bin_worst_track(
@@ -232,6 +265,56 @@ def log_gated_bin_worst_track(
 ) -> torch.Tensor:
     """TB: last computed worst-bin track rate from gated_bins curriculum (else 0)."""
     return torch.tensor(float(getattr(env, "_gated_bin_worst_rate", 0.0)), device=env.device)
+
+
+def log_track_lin_vel_xy_raw(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    clear: bool = True,
+) -> torch.Tensor:
+    """TB: mean unweighted xy tracking rate in ~[0, 1] (true track%; ×100 for percent).
+
+    Requires reward term ``raw_track_meter`` accumulating ``env._raw_track_xy_ep_sum``.
+    Logged under ``Curriculum/track_lin_vel_xy_raw``.
+
+    Set ``clear=False`` when bin raw logs must read the same buffer first; then call
+    ``clear_raw_track_xy_ep_sum`` as a later curriculum term.
+    """
+    if len(env_ids) == 0 or not hasattr(env, "_raw_track_xy_ep_sum"):
+        return torch.tensor(0.0, device=env.device)
+    rate = env._raw_track_xy_ep_sum[env_ids] / env.max_episode_length_s
+    out = torch.mean(rate)
+    if clear:
+        env._raw_track_xy_ep_sum[env_ids] = 0.0
+    return out
+
+
+def log_lin_vel_x_bin_track_rate_raw(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    bin_lo: float,
+    bin_hi: float,
+) -> torch.Tensor | None:
+    """TB: mean raw xy track rate for reset-time cmd_x in [bin_lo, bin_hi). Log-only.
+
+    Uses ``env._raw_track_xy_ep_sum`` (does not clear). Empty bin → last value / None
+    (never 0), so TB averaging does not dilute true rates.
+    """
+    # First env.reset() runs curriculum before any reward step creates the buffer.
+    if not hasattr(env, "_raw_track_xy_ep_sum") or len(env_ids) == 0:
+        return _bin_cached_or_none(env, bin_lo, bin_hi, "_bin_trk_raw")
+    rate = env._raw_track_xy_ep_sum[env_ids] / env.max_episode_length_s
+    return _bin_mean_or_last(env, env_ids, bin_lo, bin_hi, rate, "_bin_trk_raw")
+
+
+def clear_raw_track_xy_ep_sum(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+) -> torch.Tensor:
+    """Clear raw track episode sums after all raw/bin TB terms have read them."""
+    if hasattr(env, "_raw_track_xy_ep_sum") and len(env_ids) > 0:
+        env._raw_track_xy_ep_sum[env_ids] = 0.0
+    return torch.tensor(0.0, device=env.device)
 
 
 def ang_vel_cmd_levels(

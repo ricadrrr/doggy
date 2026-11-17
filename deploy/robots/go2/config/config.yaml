@@ -33,7 +33,8 @@ FSM:
     transitions: 
       Passive: LT + B.on_pressed
       # Mimic_Canter: LT(2s) + A.on_pressed
-    policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity/2026-11-13_15-07-46_s25_2p6_track_from16800
+    # 3.0 gatewb 中段稳点；满杆→3.0 由该 run 的 params/deploy.yaml ranges 决定
+    policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity/2026-11-17_16-18-49_s25_2p9_track_from19100
   Mimic_Canter:
     transitions:
       Passive: LT + B.on_pressed
@@ -41,7 +42,7 @@ FSM:
     fps: 60
     motion_file: ../../../datasets/kine2go/ai4_dog_run_04/ai4_dog_run_04_clean_464_734_60hz.csv
     policy_dir: ../../../logs/rsl_rl/unitree_go2_mimic_canter
-    velocity_policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity/2026-11-13_15-07-46_s25_2p6_track_from16800
+    velocity_policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity/2026-11-17_16-18-49_s25_2p9_track_from19100
     diagnostics: false
     entry_duration: 2.0
     handoff_duration: 0.5

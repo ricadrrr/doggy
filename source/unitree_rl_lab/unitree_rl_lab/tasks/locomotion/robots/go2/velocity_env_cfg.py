@@ -276,6 +276,12 @@ class RewardsCfg:
     track_ang_vel_z = RewTerm(
         func=mdp.track_ang_vel_z_exp, weight=0.75, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
     )
+    # Log-only meter: accumulates unweighted track exp; returns 0 so PPO reward unchanged.
+    raw_track_meter = RewTerm(
+        func=mdp.track_lin_vel_xy_raw_meter,
+        weight=1.0,
+        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+    )
 
     # -- base
     base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
@@ -361,6 +367,8 @@ class CurriculumCfg:
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
+    # True xy tracking rate ~[0,1] (ignores bin/speed reward weights). TB: Curriculum/track_lin_vel_xy_raw
+    track_lin_vel_xy_raw = CurrTerm(func=mdp.log_track_lin_vel_xy_raw)
 
 
 @configclass

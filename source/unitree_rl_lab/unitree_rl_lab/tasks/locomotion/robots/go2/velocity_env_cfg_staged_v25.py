@@ -5,10 +5,10 @@
 """Go2 staged velocity: cmd-norm + soft-penalty path (kept tasks only).
 
 Active lineage (resume previous stage ckpt into the next task):
-  2p2-ns15 → 2p6-normsoft → 2p6-track → 3p0-normsoft → 3p0-track
-  preferred to 3.0: 2p6-track ckpt → 3p0-gate (expand ranges to 3.0 with high-band gate)
-  scheme-3: gate mid ckpt → 3p0-gatew (slower gate + |cmd_x|-weighted track)
-  scheme-C: gatew ckpt → 3p0-gatewb (bin gate + discrete bin track weights + bin TB)
+  2p2-ns15 → 2p6-normsoft → 2p6-track → 2p8-track → 2p9-track
+  high-bin focus (pinned 2.9): 2p9-track ckpt → 2p9-bintrk
+  also: 2p6-track → 3p0-normsoft → 3p0-track
+  preferred auto-3.0 (paused): 2p6-track ckpt → 3p0-gate / gatew / gatewb
 
 Official velocity_env_cfg.py base task untouched.
 """
@@ -136,6 +136,64 @@ class TrackTuneCurriculumCfg(CurriculumCfg):
     soft_penalty_schedule = None
 
 
+def _bin_track_raw_term(lo: float, hi: float) -> CurrTerm:
+    """Log-only raw track rate in cmd_x bin (does not affect learning)."""
+    return CurrTerm(func=mdp.log_lin_vel_x_bin_track_rate_raw, params={"bin_lo": lo, "bin_hi": hi})
+
+
+def _bin_err_term_pin(lo: float, hi: float) -> CurrTerm:
+    return CurrTerm(
+        func=mdp.log_lin_vel_x_bin_error_xy,
+        params={"bin_lo": lo, "bin_hi": hi, "command_name": "base_velocity"},
+    )
+
+
+@configclass
+class TrackTuneBinLog2p9CurriculumCfg(CurriculumCfg):
+    """Track-tune curriculum + log-only speed bins up to 2.9 (no gate / no reward change)."""
+
+    lin_vel_cmd_levels = None
+    soft_penalty_schedule = None
+    # Read raw buffer without clearing so bin_* can use the same sums.
+    track_lin_vel_xy_raw = CurrTerm(func=mdp.log_track_lin_vel_xy_raw, params={"clear": False})
+    # Fixed bins; last edge = 2.9 (pin ceiling).
+    bin_trk_0_0p5 = _bin_track_raw_term(0.0, 0.5)
+    bin_trk_0p5_1 = _bin_track_raw_term(0.5, 1.0)
+    bin_trk_1_1p5 = _bin_track_raw_term(1.0, 1.5)
+    bin_trk_1p5_2 = _bin_track_raw_term(1.5, 2.0)
+    bin_trk_2_2p5 = _bin_track_raw_term(2.0, 2.5)
+    bin_trk_2p5_2p9 = _bin_track_raw_term(2.5, 2.9)
+    bin_err_0_0p5 = _bin_err_term_pin(0.0, 0.5)
+    bin_err_0p5_1 = _bin_err_term_pin(0.5, 1.0)
+    bin_err_1_1p5 = _bin_err_term_pin(1.0, 1.5)
+    bin_err_1p5_2 = _bin_err_term_pin(1.5, 2.0)
+    bin_err_2_2p5 = _bin_err_term_pin(2.0, 2.5)
+    bin_err_2p5_2p9 = _bin_err_term_pin(2.5, 2.9)
+    clear_raw_track_xy = CurrTerm(func=mdp.clear_raw_track_xy_ep_sum)
+
+
+@configclass
+class TrackTuneBinLog3p0CurriculumCfg(CurriculumCfg):
+    """Track-tune + log-only speed bins up to 3.0 (no gate / no reward change)."""
+
+    lin_vel_cmd_levels = None
+    soft_penalty_schedule = None
+    track_lin_vel_xy_raw = CurrTerm(func=mdp.log_track_lin_vel_xy_raw, params={"clear": False})
+    bin_trk_0_0p5 = _bin_track_raw_term(0.0, 0.5)
+    bin_trk_0p5_1 = _bin_track_raw_term(0.5, 1.0)
+    bin_trk_1_1p5 = _bin_track_raw_term(1.0, 1.5)
+    bin_trk_1p5_2 = _bin_track_raw_term(1.5, 2.0)
+    bin_trk_2_2p5 = _bin_track_raw_term(2.0, 2.5)
+    bin_trk_2p5_3 = _bin_track_raw_term(2.5, 3.0)
+    bin_err_0_0p5 = _bin_err_term_pin(0.0, 0.5)
+    bin_err_0p5_1 = _bin_err_term_pin(0.5, 1.0)
+    bin_err_1_1p5 = _bin_err_term_pin(1.0, 1.5)
+    bin_err_1p5_2 = _bin_err_term_pin(1.5, 2.0)
+    bin_err_2_2p5 = _bin_err_term_pin(2.0, 2.5)
+    bin_err_2p5_3 = _bin_err_term_pin(2.5, 3.0)
+    clear_raw_track_xy = CurrTerm(func=mdp.clear_raw_track_xy_ep_sum)
+
+
 def _init_track_tune_penalties(cfg: RobotEnvCfg):
     """Cmd-norm + mid soft weights; boost tracking (same recipe as 2.6-track)."""
     cfg.rewards.action_rate.func = mdp.action_rate_l2_cmd_normalized
@@ -166,10 +224,34 @@ class RobotEnvCfgStagedV25_2p6_Track(RobotEnvCfg):
 
 
 @configclass
-class RobotEnvCfgStagedV25_3p0_Track(RobotEnvCfg):
-    """3.0 track tune: same mid-penalty + track boost as 2.6-track; pin 3.0."""
+class RobotEnvCfgStagedV25_2p8_Track(RobotEnvCfg):
+    """2.8 track tune: same recipe as 2.6-track; human-pinned ceiling (no auto expand)."""
 
     curriculum: TrackTuneCurriculumCfg = TrackTuneCurriculumCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        _init_track_tune_penalties(self)
+        _pin_velocity_x(self, (-1.5, 2.8))
+
+
+@configclass
+class RobotEnvCfgStagedV25_2p9_Track(RobotEnvCfg):
+    """2.9 track tune + log-only speed-bin TB; human-pinned ceiling (no auto expand)."""
+
+    curriculum: TrackTuneBinLog2p9CurriculumCfg = TrackTuneBinLog2p9CurriculumCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        _init_track_tune_penalties(self)
+        _pin_velocity_x(self, (-1.5, 2.9))
+
+
+@configclass
+class RobotEnvCfgStagedV25_3p0_Track(RobotEnvCfg):
+    """3.0 track tune + log-only speed-bin TB; human-pinned ceiling (no auto expand)."""
+
+    curriculum: TrackTuneBinLog3p0CurriculumCfg = TrackTuneBinLog3p0CurriculumCfg()
 
     def __post_init__(self):
         super().__post_init__()
@@ -354,6 +436,20 @@ class RobotPlayEnvCfgStagedV25_2p6_NormSoft(RobotEnvCfgStagedV25_2p6_NormSoft):
 
 @configclass
 class RobotPlayEnvCfgStagedV25_2p6_Track(RobotEnvCfgStagedV25_2p6_Track):
+    def __post_init__(self):
+        super().__post_init__()
+        _play_post_init(self)
+
+
+@configclass
+class RobotPlayEnvCfgStagedV25_2p8_Track(RobotEnvCfgStagedV25_2p8_Track):
+    def __post_init__(self):
+        super().__post_init__()
+        _play_post_init(self)
+
+
+@configclass
+class RobotPlayEnvCfgStagedV25_2p9_Track(RobotEnvCfgStagedV25_2p9_Track):
     def __post_init__(self):
         super().__post_init__()
         _play_post_init(self)

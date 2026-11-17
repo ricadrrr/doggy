@@ -28,6 +28,26 @@ def energy(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("r
     return torch.sum(torch.abs(qvel) * torch.abs(qfrc), dim=-1)
 
 
+def track_lin_vel_xy_raw_meter(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Accumulate unweighted ``track_lin_vel_xy_exp`` for TB; return 0 (no learning effect).
+
+    Pair with curriculum ``log_track_lin_vel_xy_raw``. Use a non-zero RewTerm weight so
+    Isaac Lab does not skip this term; returned zeros keep the total reward unchanged.
+    """
+    from isaaclab.envs.mdp.rewards import track_lin_vel_xy_exp
+
+    raw = track_lin_vel_xy_exp(env, std=std, command_name=command_name, asset_cfg=asset_cfg)
+    if not hasattr(env, "_raw_track_xy_ep_sum"):
+        env._raw_track_xy_ep_sum = torch.zeros(env.num_envs, device=env.device)
+    env._raw_track_xy_ep_sum += raw * env.step_dt
+    return torch.zeros_like(raw)
+
+
 def track_lin_vel_xy_exp_speed_weighted(
     env: ManagerBasedRLEnv,
     std: float,
@@ -207,10 +227,43 @@ def foot_clearance_reward(
 def feet_too_near(
     env: ManagerBasedRLEnv, threshold: float = 0.2, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
+    """Penalize left-right feet closer than ``threshold`` (stance collapse).
+
+    - 2 bodies: compare that pair.
+    - 4 bodies (``.*_foot``): pair FL-FR and RL-RR by name; falls back to
+      index pairs (0,1)/(2,3) if names are unavailable.
+    """
     asset: Articulation = env.scene[asset_cfg.name]
     feet_pos = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
-    distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1)
-    return (threshold - distance).clamp(min=0)
+    n_feet = feet_pos.shape[1]
+    if n_feet == 2:
+        distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1)
+        return (threshold - distance).clamp(min=0)
+
+    # Resolve left-right pairs from body names when possible.
+    body_ids = list(asset_cfg.body_ids)
+    names = [asset.body_names[int(i)] for i in body_ids]
+    name_to_local = {n: i for i, n in enumerate(names)}
+
+    def _pair_idx(left_key: str, right_key: str) -> tuple[int, int] | None:
+        left = next((name_to_local[n] for n in names if left_key in n), None)
+        right = next((name_to_local[n] for n in names if right_key in n), None)
+        if left is None or right is None:
+            return None
+        return left, right
+
+    pairs = [_pair_idx("FL", "FR"), _pair_idx("RL", "RR")]
+    pairs = [p for p in pairs if p is not None]
+    if len(pairs) == 0 and n_feet >= 4:
+        pairs = [(0, 1), (2, 3)]
+    if len(pairs) == 0:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    penalty = torch.zeros(env.num_envs, device=env.device)
+    for i, j in pairs:
+        distance = torch.norm(feet_pos[:, i] - feet_pos[:, j], dim=-1)
+        penalty += (threshold - distance).clamp(min=0)
+    return penalty
 
 
 def feet_contact_without_cmd(

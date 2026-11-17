@@ -6,7 +6,7 @@ Samples history at a fixed rate (not per DDS packet) into a rolling window.
 Requires env ``unitree-measure`` (unitree_sdk2py + matplotlib).
 
   conda activate unitree-measure
-  python scripts/deploy/measure_mujoco_speed.py --network lo --domain 0 --vmax 2.5
+  python scripts/deploy/measure_mujoco_speed.py --network lo --domain 0 --vmax 3.0
 """
 
 from __future__ import annotations
@@ -442,7 +442,7 @@ def main():
     parser.add_argument("--network", default="lo")
     parser.add_argument("--domain", type=int, default=0)
     parser.add_argument("--target", type=float, default=None, help="Alias of --vmax")
-    parser.add_argument("--vmax", type=float, default=2.5, help="Forward command max")
+    parser.add_argument("--vmax", type=float, default=3.0, help="Forward command max")
     parser.add_argument("--vmin", type=float, default=-1.5, help="Backward command min")
     parser.add_argument("--window", type=float, default=20.0, help="Visible time window (s)")
     parser.add_argument("--sample-hz", type=float, default=50.0, help="History sample rate")
