@@ -247,6 +247,31 @@ class RobotEnvCfgStagedV25_2p9_Track(RobotEnvCfg):
         _pin_velocity_x(self, (-1.5, 2.9))
 
 
+def _init_2p9_bintrk_rewards(cfg: RobotEnvCfg):
+    """Track-tune + discrete |cmd_x| bin track weights; pin stays 2.9 (no 3.0 expand)."""
+    _init_track_tune_penalties(cfg)
+    cfg.rewards.track_lin_vel_xy.func = mdp.track_lin_vel_xy_exp_bin_weighted
+    cfg.rewards.track_lin_vel_xy.weight = 1.65
+    cfg.rewards.track_lin_vel_xy.params = {
+        "command_name": "base_velocity",
+        "std": math.sqrt(0.25),
+        "bin_edges": [0.0, 1.0, 2.0, 2.5, 10.0],
+        "bin_weights": [1.0, 1.15, 1.25, 1.35],
+    }
+
+
+@configclass
+class RobotEnvCfgStagedV25_2p9_BinTrk(RobotEnvCfg):
+    """2.9 pin + log-only bins + bin-weighted track (high |vx| pays more); no speed expand."""
+
+    curriculum: TrackTuneBinLog2p9CurriculumCfg = TrackTuneBinLog2p9CurriculumCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        _init_2p9_bintrk_rewards(self)
+        _pin_velocity_x(self, (-1.5, 2.9))
+
+
 @configclass
 class RobotEnvCfgStagedV25_3p0_Track(RobotEnvCfg):
     """3.0 track tune + log-only speed-bin TB; human-pinned ceiling (no auto expand)."""
@@ -450,6 +475,13 @@ class RobotPlayEnvCfgStagedV25_2p8_Track(RobotEnvCfgStagedV25_2p8_Track):
 
 @configclass
 class RobotPlayEnvCfgStagedV25_2p9_Track(RobotEnvCfgStagedV25_2p9_Track):
+    def __post_init__(self):
+        super().__post_init__()
+        _play_post_init(self)
+
+
+@configclass
+class RobotPlayEnvCfgStagedV25_2p9_BinTrk(RobotEnvCfgStagedV25_2p9_BinTrk):
     def __post_init__(self):
         super().__post_init__()
         _play_post_init(self)
